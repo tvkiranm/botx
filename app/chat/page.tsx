@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Button from "@/components/ui/button";
 import Card from "@/components/ui/card";
 import Input from "@/components/ui/input";
@@ -11,15 +11,96 @@ type Message = {
   text: string;
 };
 
-const seedMessages: Message[] = [
-  { id: "welcome", role: "bot", text: "Hi! Ask me anything about your docs." },
-];
+type ChatbotConfig = {
+  name: string;
+  theme: {
+    primaryColor: string;
+  };
+  welcomeMessage: string;
+};
+
+const DEFAULT_CONFIG: ChatbotConfig = {
+  name: "AICore Chat",
+  theme: { primaryColor: "#111827" },
+  welcomeMessage: "Hi! Ask me anything about your docs.",
+};
 
 export default function PublicChatPage() {
-  const [messages, setMessages] = useState<Message[]>(seedMessages);
+  const [messages, setMessages] = useState<Message[]>([
+    { id: "welcome", role: "bot", text: DEFAULT_CONFIG.welcomeMessage },
+  ]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [orgName, setOrgName] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [orgLoading, setOrgLoading] = useState(false);
+  const [config, setConfig] = useState<ChatbotConfig>(DEFAULT_CONFIG);
+
+  const primaryColor = useMemo(
+    () => config.theme?.primaryColor || DEFAULT_CONFIG.theme.primaryColor,
+    [config.theme]
+  );
+
+  async function fetchConfig(key: string) {
+    if (!key) return;
+    try {
+      const response = await fetch(`/api/chatbot?key=${encodeURIComponent(key)}`);
+      if (!response.ok) {
+        throw new Error("Failed to load chatbot configuration.");
+      }
+      const data = (await response.json()) as ChatbotConfig;
+      setConfig({
+        name: data.name || DEFAULT_CONFIG.name,
+        theme: { primaryColor: data.theme?.primaryColor || DEFAULT_CONFIG.theme.primaryColor },
+        welcomeMessage: data.welcomeMessage || DEFAULT_CONFIG.welcomeMessage,
+      });
+      setMessages([
+        { id: "welcome", role: "bot", text: data.welcomeMessage || DEFAULT_CONFIG.welcomeMessage },
+      ]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load config.");
+    }
+  }
+
+  async function handleCreateOrganization() {
+    if (!orgName.trim() || orgLoading) return;
+    setOrgLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/organizations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: orgName.trim() }),
+      });
+
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || "Failed to create organization.");
+      }
+
+      const data = (await response.json()) as {
+        organization?: { apiKey?: string };
+      };
+
+      const key = data.organization?.apiKey || "";
+      setApiKey(key);
+      if (key) {
+        await fetchConfig(key);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create organization.");
+    } finally {
+      setOrgLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (apiKey) {
+      fetchConfig(apiKey);
+    }
+  }, [apiKey]);
 
   async function handleSend() {
     if (!input.trim() || isLoading) return;
@@ -36,10 +117,14 @@ export default function PublicChatPage() {
     setError(null);
 
     try {
+      if (!apiKey) {
+        throw new Error("Create or enter an organization API key first.");
+      }
+
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userMessage.text }),
+        body: JSON.stringify({ apiKey, message: userMessage.text }),
       });
 
       if (!response.ok) {
@@ -66,8 +151,36 @@ export default function PublicChatPage() {
         <p className="text-xs uppercase tracking-wider text-[var(--muted)]">
           Public Chatbot
         </p>
-        <h1 className="text-2xl font-semibold">AICore Chat</h1>
+        <h1 className="text-2xl font-semibold">{config.name}</h1>
       </div>
+
+      <Card className="flex flex-col gap-4 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <Input
+            value={orgName}
+            onChange={(event) => setOrgName(event.target.value)}
+            placeholder="Organization name"
+          />
+          <Button onClick={handleCreateOrganization} disabled={orgLoading}>
+            {orgLoading ? "Creating..." : "Create Organization"}
+          </Button>
+        </div>
+
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <Input
+            value={apiKey}
+            onChange={(event) => setApiKey(event.target.value.trim())}
+            placeholder="Organization API key"
+          />
+          <Button onClick={() => fetchConfig(apiKey)} disabled={!apiKey}>
+            Load Config
+          </Button>
+        </div>
+
+        <div className="text-xs text-[var(--muted)]">
+          Use the API key above to load chatbot config and send messages.
+        </div>
+      </Card>
 
       <Card className="flex flex-1 flex-col">
         <div className="flex-1 space-y-4 overflow-y-auto p-4">
@@ -82,6 +195,9 @@ export default function PublicChatPage() {
                     ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
                     : "bg-[var(--accent)] text-[var(--foreground)]"
                 }`}
+                style={
+                  message.role === "user" ? { backgroundColor: primaryColor } : undefined
+                }
               >
                 {message.text}
               </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Button from "@/components/ui/button";
 import Card from "@/components/ui/card";
 import Input from "@/components/ui/input";
@@ -14,34 +14,71 @@ type Organization = {
   createdAt: string;
 };
 
-const initialOrganizations: Organization[] = [
-  {
-    id: "org_1",
-    name: "Northwind AI",
-    apiKey: "sk_live_NW_84dd...12b4",
-    createdAt: "Mar 02, 2026",
-  },
-  {
-    id: "org_2",
-    name: "Acme Support",
-    apiKey: "sk_live_AC_71ff...a901",
-    createdAt: "Feb 18, 2026",
-  },
-  {
-    id: "org_3",
-    name: "Skyline Retail",
-    apiKey: "sk_live_SK_1c2b...0f88",
-    createdAt: "Jan 27, 2026",
-  },
-];
+// const initialOrganizations: Organization[] = [
+//   {
+//     id: "org_1",
+//     name: "Northwind AI",
+//     apiKey: "sk_live_NW_84dd...12b4",
+//     createdAt: "Mar 02, 2026",
+//   },
+//   {
+//     id: "org_2",
+//     name: "Acme Support",
+//     apiKey: "sk_live_AC_71ff...a901",
+//     createdAt: "Feb 18, 2026",
+//   },
+//   {
+//     id: "org_3",
+//     name: "Skyline Retail",
+//     apiKey: "sk_live_SK_1c2b...0f88",
+//     createdAt: "Jan 27, 2026",
+//   },
+// ];
 
 export default function OrganizationsPage() {
-  const [organizations, setOrganizations] = useState(initialOrganizations);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [orgName, setOrgName] = useState("");
   const [generatedKey, setGeneratedKey] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function formatDate(dateValue: string) {
+    return new Date(dateValue).toLocaleDateString("en-US", {
+      month: "short",
+      day: "2-digit",
+      year: "numeric",
+    });
+  }
+
+  useEffect(() => {
+    async function loadOrganizations() {
+      try {
+        const response = await fetch("/api/organizations");
+        if (!response.ok) {
+          throw new Error("Failed to load organizations.");
+        }
+        const data = (await response.json()) as {
+          organizations?: Array<{
+            id: string;
+            name: string;
+            apiKey: string;
+            createdAt: string;
+          }>;
+        };
+        const list =
+          data.organizations?.map((org) => ({
+            ...org,
+            createdAt: formatDate(org.createdAt),
+          })) ?? [];
+        setOrganizations(list);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load organizations.");
+      }
+    }
+
+    loadOrganizations();
+  }, []);
 
   const rows = useMemo(
     () =>
@@ -69,22 +106,42 @@ export default function OrganizationsPage() {
         throw new Error("Organization name is required.");
       }
 
-      // Placeholder: Replace with API call
-      // await fetch("/api/organizations", { method: "POST", body: JSON.stringify({ name: orgName }) })
+      const response = await fetch("/api/organizations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: orgName.trim() }),
+      });
 
-      const newKey = `sk_live_${orgName.slice(0, 2).toUpperCase()}_${Math.random()
-        .toString(16)
-        .slice(2, 6)}...${Math.random().toString(16).slice(2, 6)}`;
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || "Failed to create organization.");
+      }
+
+      const data = (await response.json()) as {
+        status?: string;
+        organization?: {
+          id: string;
+          name: string;
+          apiKey: string;
+          createdAt: string;
+        };
+      };
+
+      if (!data.organization) {
+        throw new Error("Organization creation failed.");
+      }
+
+      const createdAt = formatDate(data.organization.createdAt);
 
       const newOrg: Organization = {
-        id: `org_${organizations.length + 1}`,
-        name: orgName,
-        apiKey: newKey,
-        createdAt: "Mar 18, 2026",
+        id: data.organization.id,
+        name: data.organization.name,
+        apiKey: data.organization.apiKey,
+        createdAt,
       };
 
       setOrganizations((prev) => [newOrg, ...prev]);
-      setGeneratedKey(newKey);
+      setGeneratedKey(newOrg.apiKey);
       setOrgName("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");

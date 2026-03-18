@@ -40,3 +40,18 @@ export async function POST(request: Request) {
     );
   }
 }
+
+export async function GET() {
+  try {
+    const organizations = await prisma.organization.findMany({
+      orderBy: { createdAt: "desc" },
+    });
+
+    return NextResponse.json({ status: "ok", organizations });
+  } catch (error) {
+    return NextResponse.json(
+      { status: "error", message: "Failed to load organizations." },
+      { status: 500 }
+    );
+  }
+}
