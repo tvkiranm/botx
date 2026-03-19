@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Button from "@/components/ui/button";
 import Card from "@/components/ui/card";
+import Input from "@/components/ui/input";
 
 type UploadItem = {
   id: string;
@@ -21,16 +22,23 @@ export default function UploadPage() {
   const [uploads, setUploads] = useState(initialUploads);
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [apiKey, setApiKey] = useState("");
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  function handleFiles(fileList: FileList | null) {
+  async function handleFiles(fileList: FileList | null) {
     if (!fileList || fileList.length === 0) return;
 
     const file = fileList[0];
     const ext = file.name.split(".").pop()?.toLowerCase();
-    const supported = ["xlsx", "yml", "pdf"];
+    const supported = ["xlsx", "yml", "yaml", "pdf"];
 
     if (!ext || !supported.includes(ext)) {
-      setError("Unsupported file format. Please upload .xlsx, .yml, or .pdf files.");
+      setError("Unsupported file format. Please upload .xlsx, .yml, .yaml, or .pdf files.");
+      return;
+    }
+
+    if (!apiKey.trim()) {
+      setError("Organization API key is required.");
       return;
     }
 
@@ -45,8 +53,56 @@ export default function UploadPage() {
 
     setUploads((prev) => [newItem, ...prev]);
 
-    // Placeholder: Replace with real upload call
-    setTimeout(() => {
+    try {
+      if (ext === "pdf") {
+        const extractForm = new FormData();
+        extractForm.append("file", file);
+        const extractResponse = await fetch("/api/extract-text", {
+          method: "POST",
+          body: extractForm,
+        });
+
+        if (!extractResponse.ok) {
+          const message = await extractResponse.text();
+          throw new Error(message || "Failed to extract PDF text.");
+        }
+
+        const extractData = (await extractResponse.json()) as { text?: string };
+        if (!extractData.text) {
+          throw new Error("No text extracted from PDF.");
+        }
+
+        const ingestResponse = await fetch("/api/ingest", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            apiKey: apiKey.trim(),
+            text: extractData.text,
+            source: file.name,
+            name: file.name,
+          }),
+        });
+
+        if (!ingestResponse.ok) {
+          const message = await ingestResponse.text();
+          throw new Error(message || "Failed to ingest PDF text.");
+        }
+      } else {
+        const formData = new FormData();
+        formData.append("apiKey", apiKey.trim());
+        formData.append("file", file);
+
+        const response = await fetch("/api/ingest", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const message = await response.text();
+          throw new Error(message || "Failed to upload document.");
+        }
+      }
+
       setUploads((prev) =>
         prev.map((item) =>
           item.id === newItem.id
@@ -54,7 +110,16 @@ export default function UploadPage() {
             : item
         )
       );
-    }, 1200);
+    } catch (err) {
+      setUploads((prev) =>
+        prev.map((item) =>
+          item.id === newItem.id
+            ? { ...item, status: "error", progress: 25 }
+            : item
+        )
+      );
+      setError(err instanceof Error ? err.message : "Upload failed.");
+    }
   }
 
   return (
@@ -67,6 +132,14 @@ export default function UploadPage() {
       </div>
 
       <Card>
+        <div className="mb-4">
+          <label className="text-sm font-medium">Organization API key</label>
+          <Input
+            value={apiKey}
+            onChange={(event) => setApiKey(event.target.value)}
+            placeholder="org_XXXX"
+          />
+        </div>
         <div
           className={`flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed p-8 text-center transition ${
             dragActive ? "border-[var(--primary)] bg-[var(--accent)]" : "border-[var(--card-border)]"
@@ -86,19 +159,26 @@ export default function UploadPage() {
           <div>
             <p className="text-sm font-medium">Drag & drop your files here</p>
             <p className="text-xs text-[var(--muted)]">
-              Supported: .xlsx, .yml, .pdf
+              Supported: .xlsx, .yml, .yaml, .pdf
             </p>
           </div>
-          <label className="cursor-pointer">
-            <input
-              type="file"
-              className="hidden"
-              onChange={(event) => handleFiles(event.target.files)}
-            />
-            <Button type="button" variant="secondary">
-              Browse files
-            </Button>
-          </label>
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            accept=".xlsx,.yml,.yaml,.pdf"
+            onChange={(event) => {
+              handleFiles(event.target.files);
+              event.currentTarget.value = "";
+            }}
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            Browse files
+          </Button>
         </div>
 
         {error && (

@@ -12,6 +12,10 @@ type ChatbotConfig = {
 type ChatbotDocuments = {
   theme?: { primaryColor?: string };
   welcomeMessage?: string;
+  config?: {
+    theme?: { primaryColor?: string };
+    welcomeMessage?: string;
+  };
 };
 
 const DEFAULT_THEME_COLOR = "#000";
@@ -32,8 +36,11 @@ function withCors(response: NextResponse) {
 
 function extractConfig(name: string, documents: unknown): ChatbotConfig {
   const doc = (documents ?? {}) as ChatbotDocuments;
-  const primaryColor = doc.theme?.primaryColor || DEFAULT_THEME_COLOR;
-  const welcomeMessage = doc.welcomeMessage || DEFAULT_WELCOME;
+  const config = doc.config ?? {};
+  const primaryColor =
+    config.theme?.primaryColor || doc.theme?.primaryColor || DEFAULT_THEME_COLOR;
+  const welcomeMessage =
+    config.welcomeMessage || doc.welcomeMessage || DEFAULT_WELCOME;
 
   return {
     name,
