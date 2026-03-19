@@ -6,6 +6,7 @@ import Card from "@/components/ui/card";
 import Input from "@/components/ui/input";
 import Modal from "@/components/ui/modal";
 import Table from "@/components/ui/table";
+import { toast } from "sonner";
 
 type Organization = {
   id: string;
@@ -13,6 +14,14 @@ type Organization = {
   apiKey: string;
   createdAt: string;
 };
+
+function buildEmbedSnippet(apiKey: string, orgId: string) {
+  const origin =
+    typeof window !== "undefined" && window.location?.origin
+      ? window.location.origin
+      : "https://your-domain.com";
+  return `<script src="${origin}/chatbot.js" data-key="${apiKey}" data-org="${orgId}"></script>`;
+}
 
 // const initialOrganizations: Organization[] = [
 //   {
@@ -42,6 +51,7 @@ export default function OrganizationsPage() {
   const [generatedKey, setGeneratedKey] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [embedOrg, setEmbedOrg] = useState<Organization | null>(null);
 
   function formatDate(dateValue: string) {
     return new Date(dateValue).toLocaleDateString("en-US", {
@@ -89,6 +99,16 @@ export default function OrganizationsPage() {
         <code key={`${org.id}-key`} className="text-xs text-[var(--muted)]">
           {org.apiKey}
         </code>,
+        <button
+          key={`${org.id}-embed`}
+          type="button"
+          onClick={() => setEmbedOrg(org)}
+          className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--card-border)] text-[var(--muted)] hover:bg-[var(--accent)]"
+          aria-label="View embed script"
+          title="View embed script"
+        >
+          👁
+        </button>,
         <span key={`${org.id}-date`} className="text-sm text-[var(--muted)]">
           {org.createdAt}
         </span>,
@@ -164,7 +184,7 @@ export default function OrganizationsPage() {
       </div>
 
       <Card title="Organizations" subtitle="Manage API access for each org">
-        <Table headers={["Name", "API Key", "Created Date"]} rows={rows} />
+        <Table headers={["Name", "API Key", "Embed", "Created Date"]} rows={rows} />
       </Card>
 
       <Modal
@@ -203,6 +223,37 @@ export default function OrganizationsPage() {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      <Modal
+        open={Boolean(embedOrg)}
+        title="Embed Script"
+        onClose={() => setEmbedOrg(null)}
+      >
+        {embedOrg && (
+          <div className="space-y-4">
+            <p className="text-sm text-[var(--muted)]">
+              Add this script tag to your site to embed the Bot-X chatbot.
+            </p>
+            <pre className="whitespace-pre-wrap rounded-2xl border border-[var(--card-border)] bg-[var(--accent)] px-4 py-3 text-xs">
+              {buildEmbedSnippet(embedOrg.apiKey, embedOrg.id)}
+            </pre>
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  const snippet = buildEmbedSnippet(embedOrg.apiKey, embedOrg.id);
+                  navigator.clipboard.writeText(snippet).then(() => {
+                    toast.success("Script copied");
+                  });
+                }}
+              >
+                Copy script
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );
