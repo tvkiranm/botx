@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import * as XLSX from "xlsx";
 import yaml from "js-yaml";
 import crypto from "crypto";
+import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
 
 export const runtime = "nodejs";
 
@@ -113,28 +114,38 @@ async function extractTextFromFile(file: File) {
   const ext = file.name.split(".").pop()?.toLowerCase();
 
   if (ext === "pdf") {
-    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-    if (pdfjs.GlobalWorkerOptions) {
-      pdfjs.GlobalWorkerOptions.workerSrc = "data:application/javascript,";
+    try {
+      if (pdfjs.GlobalWorkerOptions) {
+        pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+          "pdfjs-dist/legacy/build/pdf.worker.mjs",
+          import.meta.url
+        ).toString();
+      }
+
+      const loadingTask = pdfjs.getDocument({
+        data: new Uint8Array(buffer),
+        disableWorker: true,
+        useWorkerFetch: false,
+        isEvalSupported: false,
+      });
+
+      const pdf = await loadingTask.promise;
+      let text = "";
+      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum += 1) {
+        const page = await pdf.getPage(pageNum);
+        const content = await page.getTextContent();
+        const pageText = content.items
+          .map((item) => ("str" in item ? (item as { str: string }).str : ""))
+          .join(" ");
+        text += `${pageText}\n\n`;
+        await page.cleanup();
+      }
+      await pdf.destroy();
+      return text.trim();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown PDF error";
+      throw new Error(`PDF extraction failed: ${message}`);
     }
-    const loadingTask = pdfjs.getDocument({
-      data: new Uint8Array(buffer),
-      disableWorker: true,
-    });
-    const pdf = await loadingTask.promise;
-    let text = "";
-    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum += 1) {
-      const page = await pdf.getPage(pageNum);
-      const content = await page.getTextContent();
-      const pageText = content.items
-        .map((item) => ("str" in item ? (item as { str: string }).str : ""))
-        .join(" ");
-      text += `${pageText}\n\n`;
-      await page.cleanup();
-    }
-    await pdf.destroy();
-    console.log("PDF text length:", text.length);
-    return text.trim();
   }
 
   if (ext === "xlsx") {
@@ -186,6 +197,7 @@ export async function POST(request: Request) {
       apiKey = String(form.get("apiKey") || "").trim();
       namespace = String(form.get("namespace") || "").trim() || undefined;
       const file = form.get("file");
+      console.log("File-->" , file)
       if (file && file instanceof File) {
         const text = await extractTextFromFile(file);
         const chunks = chunkText(text);

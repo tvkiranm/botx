@@ -54,53 +54,18 @@ export default function UploadPage() {
     setUploads((prev) => [newItem, ...prev]);
 
     try {
-      if (ext === "pdf") {
-        const extractForm = new FormData();
-        extractForm.append("file", file);
-        const extractResponse = await fetch("/api/extract-text", {
-          method: "POST",
-          body: extractForm,
-        });
+      const formData = new FormData();
+      formData.append("apiKey", apiKey.trim());
+      formData.append("file", file);
 
-        if (!extractResponse.ok) {
-          const message = await extractResponse.text();
-          throw new Error(message || "Failed to extract PDF text.");
-        }
+      const response = await fetch("/api/ingest", {
+        method: "POST",
+        body: formData,
+      });
 
-        const extractData = (await extractResponse.json()) as { text?: string };
-        if (!extractData.text) {
-          throw new Error("No text extracted from PDF.");
-        }
-
-        const ingestResponse = await fetch("/api/ingest", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            apiKey: apiKey.trim(),
-            text: extractData.text,
-            source: file.name,
-            name: file.name,
-          }),
-        });
-
-        if (!ingestResponse.ok) {
-          const message = await ingestResponse.text();
-          throw new Error(message || "Failed to ingest PDF text.");
-        }
-      } else {
-        const formData = new FormData();
-        formData.append("apiKey", apiKey.trim());
-        formData.append("file", file);
-
-        const response = await fetch("/api/ingest", {
-          method: "POST",
-          body: formData,
-        });
-
-        if (!response.ok) {
-          const message = await response.text();
-          throw new Error(message || "Failed to upload document.");
-        }
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || "Failed to upload document.");
       }
 
       setUploads((prev) =>
