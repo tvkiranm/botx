@@ -122,7 +122,7 @@ async function extractTextFromFile(file: File) {
         ).toString();
       }
 
-      const loadingTask = pdfjs.getDocument({
+      const loadingTask = (pdfjs as any).getDocument({
         data: new Uint8Array(buffer),
         disableWorker: true,
         useWorkerFetch: false,
@@ -135,7 +135,7 @@ async function extractTextFromFile(file: File) {
         const page = await pdf.getPage(pageNum);
         const content = await page.getTextContent();
         const pageText = content.items
-          .map((item) => ("str" in item ? (item as { str: string }).str : ""))
+          .map((item: { str?: string }) => (item.str ? item.str : ""))
           .join(" ");
         text += `${pageText}\n\n`;
         await page.cleanup();
