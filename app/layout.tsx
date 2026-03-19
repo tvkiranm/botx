@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AICore Admin",
-  description: "Admin panel for AI Chatbot SaaS",
+  title: "Botx Admin",
+  description: "Admin panel for Botx Chatbot SaaS",
 };
 
 export default function RootLayout({
@@ -34,15 +34,10 @@ export default function RootLayout({
           <div className="flex min-h-screen flex-col lg:pl-[260px]">
             <header className="fixed left-0 right-0 top-0 z-10 flex items-center justify-between border-b border-[var(--card-border)] bg-[var(--card)] px-6 py-4 lg:left-[260px]">
               <div className="flex items-center gap-3">
-                <div className="lg:hidden">
-                  <div className="h-9 w-9 rounded-xl bg-[var(--accent)]" />
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--primary)] text-[var(--primary-foreground)]">
+                  B
                 </div>
-                <div className="leading-tight">
-                  <p className="text-xs uppercase tracking-wider text-[var(--muted)]">
-                    Active Organization
-                  </p>
-                  <p className="text-lg font-semibold">AICore Labs</p>
-                </div>
+                <span className="text-base font-semibold">Bot-X</span>
               </div>
               <div className="flex items-center gap-3">
                 <div className="text-right text-sm leading-tight">

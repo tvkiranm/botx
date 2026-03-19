@@ -20,9 +20,9 @@ type ChatbotConfig = {
 };
 
 const DEFAULT_CONFIG: ChatbotConfig = {
-  name: "AICore Chat",
+  name: "Botx Chat",
   theme: { primaryColor: "#111827" },
-  welcomeMessage: "Hi! Ask me anything about your docs.",
+  welcomeMessage: "Hi! Ask me anything about your Botx docs.",
 };
 
 export default function PublicChatPage() {

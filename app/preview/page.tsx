@@ -12,7 +12,7 @@ type Message = {
 };
 
 const initialMessages: Message[] = [
-  { id: "m1", role: "bot", text: "Hi! I'm the AICore assistant. How can I help?" },
+  { id: "m1", role: "bot", text: "Hi! I'm the Botx assistant. How can I help?" },
   { id: "m2", role: "user", text: "Show me the latest onboarding flow." },
   { id: "m3", role: "bot", text: "Sure - I can walk you through that. Want the sales or support flow?" },
 ];
