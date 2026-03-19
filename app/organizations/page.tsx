@@ -143,6 +143,7 @@ export default function OrganizationsPage() {
       setOrganizations((prev) => [newOrg, ...prev]);
       setGeneratedKey(newOrg.apiKey);
       setOrgName("");
+      setIsModalOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
