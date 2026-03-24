@@ -41,15 +41,7 @@ type StoredDocuments = {
 const pineconeApiKey = process.env.PINECONE_API_KEY;
 const pineconeIndex = process.env.PINECONE_INDEX;
 
-const geminiApiKey = process.env.GEMINI_API_KEY;
-const geminiBaseUrl =
-  process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com";
-const geminiEmbeddingModel = process.env.GEMINI_EMBEDDING_MODEL;
-const geminiEmbeddingDim = process.env.GEMINI_EMBEDDING_DIM;
-
-function normalizeModel(model: string) {
-  return model.startsWith("models/") ? model : `models/${model}`;
-}
+const groqApiKey = process.env.GROQ_API_KEY;
 
 function chunkText(text: string, size = 900, overlap = 120) {
   const chunks: string[] = [];
@@ -63,50 +55,10 @@ function chunkText(text: string, size = 900, overlap = 120) {
 }
 
 async function createEmbedding(input: string) {
-  if (!geminiApiKey || !geminiEmbeddingModel) {
-    throw new Error("Gemini embeddings not configured.");
+  if (!groqApiKey) {
+    throw new Error("Groq API key not configured for embeddings.");
   }
-
-  const outputDimensionality = geminiEmbeddingDim
-    ? Number.parseInt(geminiEmbeddingDim, 10)
-    : undefined;
-
-  if (geminiEmbeddingDim && Number.isNaN(outputDimensionality)) {
-    throw new Error("GEMINI_EMBEDDING_DIM must be a number.");
-  }
-
-  const response = await fetch(
-    `${geminiBaseUrl}/v1beta/${normalizeModel(geminiEmbeddingModel)}:embedContent`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-goog-api-key": geminiApiKey,
-      },
-      body: JSON.stringify({
-        content: {
-          parts: [{ text: input }],
-        },
-        ...(outputDimensionality ? { outputDimensionality } : {}),
-      }),
-    }
-  );
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Gemini embeddings failed: ${errorText}`);
-  }
-
-  const data = (await response.json()) as {
-    embedding?: { values?: number[] };
-  };
-
-  const vector = data.embedding?.values;
-  if (!vector) {
-    throw new Error("Gemini embeddings returned no vector.");
-  }
-
-  return vector;
+  return null;
 }
 
 async function extractTextFromFile(file: File) {
@@ -283,7 +235,7 @@ export async function POST(request: Request) {
     }
 
     const canEmbed =
-      pineconeApiKey && pineconeIndex && geminiApiKey && geminiEmbeddingModel;
+      pineconeApiKey && pineconeIndex && groqApiKey;
 
     if (canEmbed) {
       const pinecone = new Pinecone({ apiKey: pineconeApiKey! });
@@ -297,6 +249,7 @@ export async function POST(request: Request) {
       for (const item of items) {
         if (!item.text) continue;
         const values = await createEmbedding(item.text);
+        if (!values) continue;
         vectors.push({
           id: item.id || crypto.randomBytes(8).toString("hex"),
           values,

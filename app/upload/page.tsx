@@ -1,9 +1,15 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Button from "@/components/ui/button";
 import Card from "@/components/ui/card";
 import Input from "@/components/ui/input";
+
+type Organization = {
+  id: string;
+  name: string;
+  apiKey: string;
+};
 
 type UploadItem = {
   id: string;
@@ -12,18 +18,34 @@ type UploadItem = {
   progress: number;
 };
 
-const initialUploads: UploadItem[] = [
-  { id: "file_1", name: "product_catalog.xlsx", status: "uploaded", progress: 100 },
-  { id: "file_2", name: "support_faq.yml", status: "processing", progress: 64 },
-  { id: "file_3", name: "pricing_guide.pdf", status: "error", progress: 25 },
-];
+const initialUploads: UploadItem[] = [];
 
 export default function UploadPage() {
   const [uploads, setUploads] = useState(initialUploads);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [selectedOrg, setSelectedOrg] = useState("");
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [apiKey, setApiKey] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    async function loadOrganizations() {
+      try {
+        const response = await fetch("/api/organizations");
+        if (!response.ok) return;
+        const data = (await response.json()) as {
+          organizations?: Organization[];
+        };
+        setOrganizations(data.organizations ?? []);
+        if (data.organizations?.length) {
+          setSelectedOrg(data.organizations[0].apiKey);
+        }
+      } catch (err) {
+        console.error("Failed to load organizations", err);
+      }
+    }
+    loadOrganizations();
+  }, []);
 
   async function handleFiles(fileList: FileList | null) {
     if (!fileList || fileList.length === 0) return;
@@ -37,7 +59,7 @@ export default function UploadPage() {
       return;
     }
 
-    if (!apiKey.trim()) {
+    if (!selectedOrg.trim()) {
       setError("Organization API key is required.");
       return;
     }
@@ -55,7 +77,7 @@ export default function UploadPage() {
 
     try {
       const formData = new FormData();
-      formData.append("apiKey", apiKey.trim());
+      formData.append("apiKey", selectedOrg.trim());
       formData.append("file", file);
 
       const response = await fetch("/api/ingest", {
@@ -98,12 +120,21 @@ export default function UploadPage() {
 
       <Card>
         <div className="mb-4">
-          <label className="text-sm font-medium">Organization API key</label>
-          <Input
-            value={apiKey}
-            onChange={(event) => setApiKey(event.target.value)}
-            placeholder="org_XXXX"
-          />
+          <label className="text-sm font-medium">Organization</label>
+          <select
+            value={selectedOrg}
+            onChange={(event) => setSelectedOrg(event.target.value)}
+            className="w-full rounded-xl border border-[var(--card-border)] bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+          >
+            {organizations.length === 0 && (
+              <option value="">No organizations found</option>
+            )}
+            {organizations.map((org) => (
+              <option key={org.id} value={org.apiKey}>
+                {org.name}
+              </option>
+            ))}
+          </select>
         </div>
         <div
           className={`flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed p-8 text-center transition ${

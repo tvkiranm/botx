@@ -9,6 +9,8 @@ datasource db {
 model User {
   id        String   @id @default(uuid())
   email     String   @unique
+  password  String
+  name      String?
   createdAt DateTime @default(now())
   chats     Chat[]
 }
@@ -19,6 +21,8 @@ model Chat {
   createdAt DateTime  @default(now())
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages  Message[]
+
+  @@index([userId])
 }
 
 model Message {
@@ -38,6 +42,8 @@ model Organization {
   name      String
   apiKey    String   @unique
   createdAt DateTime @default(now())
+
+  @@index([apiKey])
 }
 
 model ChatbotData {
@@ -45,6 +51,8 @@ model ChatbotData {
   organizationId String
   faqs           Json?
   documents      Json?
+
+  @@index([organizationId])
 }
 
 model Embedding {
@@ -52,4 +60,6 @@ model Embedding {
   organizationId String
   content        String
   vector         Json
+
+  @@index([organizationId])
 }

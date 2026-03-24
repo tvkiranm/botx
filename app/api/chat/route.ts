@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Pinecone } from "@pinecone-database/pinecone";
+import { Groq } from "groq-sdk";
 
 type ChatRequest = {
   apiKey?: string;
@@ -26,13 +27,8 @@ type DocumentItem = {
   name?: string;
 };
 
-const geminiApiKey = process.env.GEMINI_API_KEY;
-const geminiBaseUrl =
-  process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com";
-const geminiChatModel =
-  process.env.GEMINI_CHAT_MODEL || "gemini-1.5-flash";
-const geminiEmbeddingModel = process.env.GEMINI_EMBEDDING_MODEL;
-const geminiEmbeddingDim = process.env.GEMINI_EMBEDDING_DIM;
+const groqApiKey = process.env.GROQ_API_KEY;
+const groqChatModel = process.env.GROQ_CHAT_MODEL || "llama-3.3-70b-versatile";
 
 const pineconeApiKey = process.env.PINECONE_API_KEY;
 const pineconeIndex = process.env.PINECONE_INDEX;
@@ -53,50 +49,10 @@ function withCors(response: NextResponse) {
   return response;
 }
 
-function normalizeModel(model: string) {
-  return model.startsWith("models/") ? model : `models/${model}`;
-}
+const groq = groqApiKey ? new Groq({ apiKey: groqApiKey }) : null;
 
 async function createEmbedding(input: string) {
-  if (!geminiApiKey || !geminiEmbeddingModel) {
-    return null;
-  }
-
-  const outputDimensionality = geminiEmbeddingDim
-    ? Number.parseInt(geminiEmbeddingDim, 10)
-    : undefined;
-
-  if (geminiEmbeddingDim && Number.isNaN(outputDimensionality)) {
-    throw new Error("GEMINI_EMBEDDING_DIM must be a number.");
-  }
-
-  const response = await fetch(
-    `${geminiBaseUrl}/v1beta/${normalizeModel(geminiEmbeddingModel)}:embedContent`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-goog-api-key": geminiApiKey,
-      },
-      body: JSON.stringify({
-        content: {
-          parts: [{ text: input }],
-        },
-        ...(outputDimensionality ? { outputDimensionality } : {}),
-      }),
-    }
-  );
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Gemini embeddings failed: ${errorText}`);
-  }
-
-  const data = (await response.json()) as {
-    embedding?: { values?: number[] };
-  };
-
-  return data.embedding?.values ?? null;
+  return null;
 }
 
 function normalizeFaqs(input: unknown): FaqItem[] {
@@ -140,49 +96,27 @@ function matchFaq(message: string, faqs: FaqItem[]) {
 }
 
 async function createChatCompletion(input: string, context: string) {
-  if (!geminiApiKey) {
-    throw new Error("Gemini API key not configured.");
+  if (!groq) {
+    throw new Error("Groq API key not configured.");
   }
 
-  const response = await fetch(
-    `${geminiBaseUrl}/v1beta/${normalizeModel(geminiChatModel)}:generateContent`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-goog-api-key": geminiApiKey,
+  const chatCompletion = await groq.chat.completions.create({
+    model: groqChatModel,
+    messages: [
+      {
+        role: "system",
+        content:
+          "You are a helpful assistant for an AI chatbot SaaS. Answer using only the provided context. If the answer is not in the context, say you don't have that information.",
       },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              {
-                text:
-                  "You are a helpful assistant for an AI chatbot SaaS. Answer using only the provided context. If the answer is not in the context, say you don't have that information.",
-              },
-              {
-                text: `Context:\n${context || "No context found."}\n\nQuestion: ${input}`,
-              },
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.2,
-        },
-      }),
-    }
-  );
+      {
+        role: "user",
+        content: `Context:\n${context || "No context found."}\n\nQuestion: ${input}`,
+      },
+    ],
+    temperature: 0.2,
+  });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Gemini chat failed: ${errorText}`);
-  }
-
-  const data = (await response.json()) as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-  };
-
-  const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  const reply = chatCompletion.choices?.[0]?.message?.content;
   return reply || DEFAULT_FALLBACK_MESSAGE;
 }
 
@@ -243,8 +177,8 @@ export async function POST(request: Request) {
   if (!apiKey || !message) {
     return withCors(
       NextResponse.json(
-      { reply: "apiKey and message are required.", status: "error" },
-      { status: 400 }
+        { reply: "apiKey and message are required.", status: "error" },
+        { status: 400 }
       )
     );
   }
@@ -257,8 +191,8 @@ export async function POST(request: Request) {
     if (!organization) {
       return withCors(
         NextResponse.json(
-        { reply: "Invalid API key.", status: "error" },
-        { status: 401 }
+          { reply: "Invalid API key.", status: "error" },
+          { status: 401 }
         )
       );
     }
@@ -276,47 +210,17 @@ export async function POST(request: Request) {
     }
 
     let context = buildContext(faqs, payload.documents, message);
-    const sources: string[] = [];
-
-    const canVectorSearch =
-      pineconeApiKey && pineconeIndex && geminiApiKey && geminiEmbeddingModel;
-
-    if (canVectorSearch) {
-      const vector = await createEmbedding(message);
-      if (vector) {
-        const pinecone = new Pinecone({ apiKey: pineconeApiKey! });
-        const index = pinecone.index(pineconeIndex!);
-        const namespace = `org_${organization.id}`;
-        const result = await index.namespace(namespace).query({
-          vector,
-          topK: 5,
-          includeMetadata: true,
-        });
-        const matches = result.matches ?? [];
-        const vectorText = matches
-          .map((match) => {
-            const meta = match.metadata as { text?: string; source?: string };
-            if (meta?.source) sources.push(meta.source);
-            return meta?.text;
-          })
-          .filter(Boolean)
-          .join("\n\n");
-        if (vectorText) {
-          context = [context, vectorText].filter(Boolean).join("\n\n");
-        }
-      }
-    }
 
     const reply = await createChatCompletion(message, context);
 
-    return withCors(NextResponse.json({ reply, sources, status: "ok" }));
+    return withCors(NextResponse.json({ reply, status: "ok" }));
   } catch (error) {
     console.error("/api/chat error", error);
     const message = error instanceof Error ? error.message : "Unknown error";
     return withCors(
       NextResponse.json(
-      { reply: message || DEFAULT_FALLBACK_MESSAGE, status: "error" },
-      { status: 500 }
+        { reply: message || DEFAULT_FALLBACK_MESSAGE, status: "error" },
+        { status: 500 }
       )
     );
   }
